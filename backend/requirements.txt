@@ -1,0 +1,7 @@
+fastapi
+uvicorn
+google-generativeai
+pymupdf
+reportlab
+python-multipart
+pydantic

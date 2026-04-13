@@ -1,0 +1,29 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+venv/
+.env
+
+# Node
+node_modules/
+.next/
+dist/
+
+# Large files / Output files
+*.pdf
+*.doc
+*.docx
+*.json
+*.txt
+*.exe
+
+# Except some text files
+!requirements.txt
+!README.md
+!models_out.txt
+!supported_models.txt
+!test_out.txt
+!package.json
+!package-lock.json
+!tsconfig.json
