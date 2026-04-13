@@ -18,7 +18,7 @@ def process_case_file(case_pdf_path: str) -> dict:
         raise ValueError("GEMINI_API_KEY_PRIMARY not found")
 
     genai.configure(api_key=api_key_primary)
-    model_name = 'gemini-3.1-pro-preview'
+    model_name = 'gemini-3-flash-preview'
     model = genai.GenerativeModel(model_name)
 
     print(f"Uploading case file {case_pdf_path}...")
@@ -132,8 +132,14 @@ def process_case_file(case_pdf_path: str) -> dict:
       "_confidence_scores": {
         "patient_details": 100,
         "diagnosis": 100,
+        "presenting_complaints": 100,
+        "past_history": 100,
+        "allergies": 100,
         "clinical_exam": 100,
+        "investigations": 100,
+        "procedures": 100,
         "hospital_course": 100,
+        "condition_at_discharge": 100,
         "medications": 100,
         "follow_up": 100
       },

@@ -213,12 +213,14 @@ export default function DataReviewEditor({ initialData, onReset }: DataReviewEdi
               <div style={{ marginBottom: "10px" }}>
                  <h2 style={{ fontWeight: "bold", marginBottom: "4px" }}>
                     PRESENTING COMPLAINTS:
+                    {data._confidence_scores?.presenting_complaints && <span data-html2canvas-ignore="true" style={{ fontSize: "10pt", color: "#2563eb", marginLeft: "10px", fontWeight: "normal" }}>(AI Confidence: {data._confidence_scores.presenting_complaints}%)</span>}
                  </h2>
                  <table style={{ width: "100%", borderCollapse: 'collapse', border: '1px solid #000' }}>
                    <thead>
                      <tr>
                        <th style={{ border: '1px solid #000', padding: '2px 6px', textAlign: 'left' }}>Complaint</th>
                        <th style={{ border: '1px solid #000', padding: '2px 6px', textAlign: 'left', width: '30%' }}>Duration</th>
+                       <th data-html2canvas-ignore="true" style={{ border: '1px solid #000', padding: '2px 6px', textAlign: 'center', width: '5%' }}>Action</th>
                      </tr>
                    </thead>
                    <tbody>
@@ -226,16 +228,23 @@ export default function DataReviewEditor({ initialData, onReset }: DataReviewEdi
                        <tr key={i}>
                          <td style={{ border: '1px solid #000', padding: '2px 6px' }}>{c.complaint || "-"}</td>
                          <td style={{ border: '1px solid #000', padding: '2px 6px' }}>{c.duration || "-"}</td>
+                         <td data-html2canvas-ignore="true" style={{ border: '1px solid #000', padding: '2px 6px', textAlign: 'center' }} contentEditable={false}>
+                           <button onClick={(e) => { e.stopPropagation(); setData(prev => ({ ...prev, presenting_complaints: prev.presenting_complaints.filter((_: any, idx: number) => idx !== i) })); }} style={{ color: "red", cursor: "pointer", fontWeight: "bold", background: "none", border: "none" }} title="Delete Row">✖</button>
+                         </td>
                        </tr>
-                     )) : <tr><td colSpan={2} style={{ border: '1px solid #000', padding: '2px 6px', textAlign: 'center' }}>-</td></tr>}
+                     )) : <tr><td colSpan={3} style={{ border: '1px solid #000', padding: '2px 6px', textAlign: 'center' }}>-</td></tr>}
                    </tbody>
                  </table>
+                 <div data-html2canvas-ignore="true" style={{ marginTop: "8px", textAlign: "left" }}>
+                    <button onClick={() => setData(prev => ({ ...prev, presenting_complaints: [...(prev.presenting_complaints || []), { complaint: "to be filled", duration: "to be filled" }] }))} style={{ padding: "4px 8px", backgroundColor: "#dbeafe", color: "#1d4ed8", border: "1px solid #bfdbfe", borderRadius: "4px", fontSize: "9pt", cursor: "pointer", fontWeight: "500" }}>+ Add Complaint row manually</button>
+                 </div>
               </div>
 
               {/* PAST HISTORY */}
               <div style={{ marginBottom: "10px" }}>
                  <h2 style={{ fontWeight: "bold", marginBottom: "4px" }}>
                     PAST HISTORY:
+                    {data._confidence_scores?.past_history && <span data-html2canvas-ignore="true" style={{ fontSize: "10pt", color: "#2563eb", marginLeft: "10px", fontWeight: "normal" }}>(AI Confidence: {data._confidence_scores.past_history}%)</span>}
                  </h2>
                  <table style={{ width: "100%", borderCollapse: 'collapse', border: '1px solid #000' }}>
                    <thead>
@@ -243,6 +252,7 @@ export default function DataReviewEditor({ initialData, onReset }: DataReviewEdi
                        <th style={{ border: '1px solid #000', padding: '2px 6px', textAlign: 'left' }}>Condition</th>
                        <th style={{ border: '1px solid #000', padding: '2px 6px', textAlign: 'left', width: '25%' }}>Duration</th>
                        <th style={{ border: '1px solid #000', padding: '2px 6px', textAlign: 'left', width: '35%' }}>Remarks</th>
+                       <th data-html2canvas-ignore="true" style={{ border: '1px solid #000', padding: '2px 6px', textAlign: 'center', width: '5%' }}>Action</th>
                      </tr>
                    </thead>
                    <tbody>
@@ -251,15 +261,24 @@ export default function DataReviewEditor({ initialData, onReset }: DataReviewEdi
                          <td style={{ border: '1px solid #000', padding: '2px 6px' }}>{h.condition || "-"}</td>
                          <td style={{ border: '1px solid #000', padding: '2px 6px' }}>{h.duration || "-"}</td>
                          <td style={{ border: '1px solid #000', padding: '2px 6px' }}>{h.remarks || "-"}</td>
+                         <td data-html2canvas-ignore="true" style={{ border: '1px solid #000', padding: '2px 6px', textAlign: 'center' }} contentEditable={false}>
+                           <button onClick={(e) => { e.stopPropagation(); setData(prev => ({ ...prev, past_history: prev.past_history.filter((_: any, idx: number) => idx !== i) })); }} style={{ color: "red", cursor: "pointer", fontWeight: "bold", background: "none", border: "none" }} title="Delete Row">✖</button>
+                         </td>
                        </tr>
-                     )) : <tr><td colSpan={3} style={{ border: '1px solid #000', padding: '2px 6px', textAlign: 'center' }}>-</td></tr>}
+                     )) : <tr><td colSpan={4} style={{ border: '1px solid #000', padding: '2px 6px', textAlign: 'center' }}>-</td></tr>}
                    </tbody>
                  </table>
+                 <div data-html2canvas-ignore="true" style={{ marginTop: "8px", textAlign: "left" }}>
+                    <button onClick={() => setData(prev => ({ ...prev, past_history: [...(prev.past_history || []), { condition: "to be filled", duration: "to be filled", remarks: "to be filled" }] }))} style={{ padding: "4px 8px", backgroundColor: "#dbeafe", color: "#1d4ed8", border: "1px solid #bfdbfe", borderRadius: "4px", fontSize: "9pt", cursor: "pointer", fontWeight: "500" }}>+ Add History row manually</button>
+                 </div>
               </div>
 
               {/* ALLERGIES */}
               <div style={{ marginBottom: "10px" }}>
-                 <h2 style={{ fontWeight: "bold", display: "inline-block", marginRight: "10px" }}>ALLERGIES:</h2>
+                 <h2 style={{ fontWeight: "bold", display: "inline-block", marginRight: "10px" }}>
+                    ALLERGIES:
+                    {data._confidence_scores?.allergies && <span data-html2canvas-ignore="true" style={{ fontSize: "10pt", color: "#2563eb", marginLeft: "10px", fontWeight: "normal" }}>(AI Confidence: {data._confidence_scores.allergies}%)</span>}
+                 </h2>
                  <Checkbox 
                    value={data.allergies?.known === true} 
                    onChange={(val) => setData(prev => ({ ...prev, allergies: { ...prev.allergies, known: val } })) } 
@@ -330,12 +349,16 @@ export default function DataReviewEditor({ initialData, onReset }: DataReviewEdi
 
               {/* INVESTIGATIONS */}
               <div style={{ marginBottom: "10px" }}>
-                 <h2 style={{ fontWeight: "bold", marginBottom: "4px" }}>INVESTIGATIONS:</h2>
+                 <h2 style={{ fontWeight: "bold", marginBottom: "4px" }}>
+                    INVESTIGATIONS:
+                    {data._confidence_scores?.investigations && <span data-html2canvas-ignore="true" style={{ fontSize: "10pt", color: "#2563eb", marginLeft: "10px", fontWeight: "normal" }}>(AI Confidence: {data._confidence_scores.investigations}%)</span>}
+                 </h2>
                  <table style={{ width: "100%", borderCollapse: 'collapse', border: '1px solid #000' }}>
                    <thead>
                      <tr>
                        <th style={{ border: '1px solid #000', padding: '2px 6px', textAlign: 'left', width: '30%' }}>Test Name</th>
                        <th style={{ border: '1px solid #000', padding: '2px 6px', textAlign: 'left' }}>Findings</th>
+                       <th data-html2canvas-ignore="true" style={{ border: '1px solid #000', padding: '2px 6px', textAlign: 'center', width: '5%' }}>Action</th>
                      </tr>
                    </thead>
                    <tbody>
@@ -343,15 +366,24 @@ export default function DataReviewEditor({ initialData, onReset }: DataReviewEdi
                        <tr key={i}>
                          <td style={{ border: '1px solid #000', padding: '2px 6px' }}>{inv.name || "-"}</td>
                          <td style={{ border: '1px solid #000', padding: '2px 6px' }}>{inv.finding || "-"}</td>
+                         <td data-html2canvas-ignore="true" style={{ border: '1px solid #000', padding: '2px 6px', textAlign: 'center' }} contentEditable={false}>
+                           <button onClick={(e) => { e.stopPropagation(); setData(prev => ({ ...prev, investigations: prev.investigations.filter((_: any, idx: number) => idx !== i) })); }} style={{ color: "red", cursor: "pointer", fontWeight: "bold", background: "none", border: "none" }} title="Delete Row">✖</button>
+                         </td>
                        </tr>
-                     )) : <tr><td colSpan={2} style={{ border: '1px solid #000', padding: '2px 6px', textAlign: 'center' }}>-</td></tr>}
+                     )) : <tr><td colSpan={3} style={{ border: '1px solid #000', padding: '2px 6px', textAlign: 'center' }}>-</td></tr>}
                    </tbody>
                  </table>
+                 <div data-html2canvas-ignore="true" style={{ marginTop: "8px", textAlign: "left" }}>
+                    <button onClick={() => setData(prev => ({ ...prev, investigations: [...(prev.investigations || []), { name: "to be filled", finding: "to be filled" }] }))} style={{ padding: "4px 8px", backgroundColor: "#dbeafe", color: "#1d4ed8", border: "1px solid #bfdbfe", borderRadius: "4px", fontSize: "9pt", cursor: "pointer", fontWeight: "500" }}>+ Add Test row manually</button>
+                 </div>
               </div>
 
               {/* PROCEDURES & HOSPITAL COURSE */}
               <div style={{ marginBottom: "10px" }}>
-                 <h2 style={{ fontWeight: "bold", marginBottom: "4px" }}>PROCEDURAL NOTE:</h2>
+                 <h2 style={{ fontWeight: "bold", marginBottom: "4px" }}>
+                    PROCEDURAL NOTE:
+                    {data._confidence_scores?.procedures && <span data-html2canvas-ignore="true" style={{ fontSize: "10pt", color: "#2563eb", marginLeft: "10px", fontWeight: "normal" }}>(AI Confidence: {data._confidence_scores.procedures}%)</span>}
+                 </h2>
                  <p style={{ margin: 0, paddingLeft: "10px", whiteSpace: "pre-wrap" }}>{data.procedures || "-"}</p>
               </div>
               
@@ -405,6 +437,7 @@ export default function DataReviewEditor({ initialData, onReset }: DataReviewEdi
                        <th style={{ border: '1px solid #000', padding: '2px', width: '15%' }}>Frequency</th>
                        <th style={{ border: '1px solid #000', padding: '2px', width: '10%' }}>Duration</th>
                        <th style={{ border: '1px solid #000', padding: '2px', width: '20%' }}>Remarks</th>
+                       <th data-html2canvas-ignore="true" style={{ border: '1px solid #000', padding: '2px', width: '5%' }}>Action</th>
                      </tr>
                    </thead>
                    <tbody>
@@ -424,6 +457,9 @@ export default function DataReviewEditor({ initialData, onReset }: DataReviewEdi
                              {cleanRemarks || "-"}
                              {isFlagged && <span style={{ color: "orange", marginLeft: "4px", fontSize: "8pt" }}>⚠ Review</span>}
                            </td>
+                           <td data-html2canvas-ignore="true" style={{ border: '1px solid #000', padding: '2px', textAlign: 'center' }} contentEditable={false}>
+                             <button onClick={(e) => { e.stopPropagation(); setData(prev => ({ ...prev, medications: prev.medications.filter((_: any, idx: number) => idx !== i) })); }} style={{ color: "red", cursor: "pointer", fontWeight: "bold", background: "none", border: "none" }} title="Delete Row">✖</button>
+                           </td>
                          </tr>
                        );
                      }) : (
@@ -436,6 +472,7 @@ export default function DataReviewEditor({ initialData, onReset }: DataReviewEdi
                           <td style={{ border: '1px solid #000', padding: '2px' }}>-</td>
                           <td style={{ border: '1px solid #000', padding: '2px' }}>-</td>
                           <td style={{ border: '1px solid #000', padding: '2px' }}>-</td>
+                          <td data-html2canvas-ignore="true" style={{ border: '1px solid #000', padding: '2px', textAlign: 'center' }}>-</td>
                         </tr>
                       )}
                    </tbody>
