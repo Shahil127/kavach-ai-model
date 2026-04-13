@@ -290,10 +290,10 @@ def process_case_file(case_pdf_path: str) -> dict:
 
     # Ensure meds structure
     def validate_medications(meds: list) -> list:
-        \"\"\"
+        """
         Post-extraction validation pass for discharge medications.
         Removes meds that look like they came from IP narrative instead of discharge table.
-        \"\"\"
+        """
         # These terms appear in IP treatment narratives but rarely in discharge tables as standalone entries
         ip_only_terms = [
             "lmwh", "iv gtn", "iv nitrate", "nikorandil", "trimetazidine",
@@ -330,17 +330,7 @@ def process_case_file(case_pdf_path: str) -> dict:
 
     data["medications"] = validate_medications(data.get("medications", []))
 
-    # Ensure meds structure
-    if not data.get("medications"):
-        data["medications"] = [{
-            "type": "",
-            "generic_name": "",
-            "brand_name": "",
-            "dose": "",
-            "frequency": "",
-            "duration": "",
-            "remarks": ""
-        }]
+
 
     # Ensure follow-up exists
     if "follow_up" not in data:

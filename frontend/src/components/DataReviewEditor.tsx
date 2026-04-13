@@ -391,18 +391,25 @@ export default function DataReviewEditor({ initialData, onReset }: DataReviewEdi
                      </tr>
                    </thead>
                    <tbody>
-                     {data.medications?.length > 0 ? data.medications.map((m: any, i: number) => (
-                       <tr key={i}>
-                         <td style={{ border: '1px solid #000', padding: '2px' }}>{i + 1}</td>
-                         <td style={{ border: '1px solid #000', padding: '2px' }}>{m.type || "-"}</td>
-                         <td style={{ border: '1px solid #000', padding: '2px' }}>{m.generic_name || "-"}</td>
-                         <td style={{ border: '1px solid #000', padding: '2px' }}>{m.brand_name || "-"}</td>
-                         <td style={{ border: '1px solid #000', padding: '2px' }}>{m.dose || "-"}</td>
-                         <td style={{ border: '1px solid #000', padding: '2px' }}>{m.frequency || "-"}</td>
-                         <td style={{ border: '1px solid #000', padding: '2px' }}>{m.duration || "-"}</td>
-                         <td style={{ border: '1px solid #000', padding: '2px' }}>{m.remarks || "-"}</td>
-                       </tr>
-                     )) : (
+                     {data.medications?.length > 0 ? data.medications.map((m: any, i: number) => {
+                       const isFlagged = m.remarks?.includes("[REVIEW - possible IP med]");
+                       const cleanRemarks = m.remarks?.replace("[REVIEW - possible IP med]", "").trim();
+                       return (
+                         <tr key={i} style={{ backgroundColor: isFlagged ? "#fff3cd" : "transparent" }}>
+                           <td style={{ border: '1px solid #000', padding: '2px' }}>{i + 1}</td>
+                           <td style={{ border: '1px solid #000', padding: '2px' }}>{m.type || "-"}</td>
+                           <td style={{ border: '1px solid #000', padding: '2px' }}>{m.generic_name || "-"}</td>
+                           <td style={{ border: '1px solid #000', padding: '2px' }}>{m.brand_name || "-"}</td>
+                           <td style={{ border: '1px solid #000', padding: '2px' }}>{m.dose || "-"}</td>
+                           <td style={{ border: '1px solid #000', padding: '2px' }}>{m.frequency || "-"}</td>
+                           <td style={{ border: '1px solid #000', padding: '2px' }}>{m.duration || "-"}</td>
+                           <td style={{ border: '1px solid #000', padding: '2px' }}>
+                             {cleanRemarks || "-"}
+                             {isFlagged && <span style={{ color: "orange", marginLeft: "4px", fontSize: "8pt" }}>⚠ Review</span>}
+                           </td>
+                         </tr>
+                       );
+                     }) : (
                         <tr>
                           <td style={{ border: '1px solid #000', padding: '2px' }}>1</td>
                           <td style={{ border: '1px solid #000', padding: '2px' }}>-</td>
