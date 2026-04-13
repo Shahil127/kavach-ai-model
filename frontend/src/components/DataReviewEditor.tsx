@@ -381,6 +381,7 @@ export default function DataReviewEditor({ initialData, onReset }: DataReviewEdi
                    <thead>
                      <tr>
                        <th style={{ border: '1px solid #000', padding: '2px', width: '5%' }}>S.No</th>
+                       <th style={{ border: '1px solid #000', padding: '2px', width: '5%' }}>Type</th>
                        <th style={{ border: '1px solid #000', padding: '2px' }}>Generic Name</th>
                        <th style={{ border: '1px solid #000', padding: '2px' }}>Brand Name</th>
                        <th style={{ border: '1px solid #000', padding: '2px' }}>Dose</th>
@@ -393,6 +394,7 @@ export default function DataReviewEditor({ initialData, onReset }: DataReviewEdi
                      {data.medications?.length > 0 ? data.medications.map((m: any, i: number) => (
                        <tr key={i}>
                          <td style={{ border: '1px solid #000', padding: '2px' }}>{i + 1}</td>
+                         <td style={{ border: '1px solid #000', padding: '2px' }}>{m.type || "-"}</td>
                          <td style={{ border: '1px solid #000', padding: '2px' }}>{m.generic_name || "-"}</td>
                          <td style={{ border: '1px solid #000', padding: '2px' }}>{m.brand_name || "-"}</td>
                          <td style={{ border: '1px solid #000', padding: '2px' }}>{m.dose || "-"}</td>
@@ -403,6 +405,7 @@ export default function DataReviewEditor({ initialData, onReset }: DataReviewEdi
                      )) : (
                         <tr>
                           <td style={{ border: '1px solid #000', padding: '2px' }}>1</td>
+                          <td style={{ border: '1px solid #000', padding: '2px' }}>-</td>
                           <td style={{ border: '1px solid #000', padding: '2px' }}>-</td>
                           <td style={{ border: '1px solid #000', padding: '2px' }}>-</td>
                           <td style={{ border: '1px solid #000', padding: '2px' }}>-</td>

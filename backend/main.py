@@ -84,6 +84,7 @@ class ConditionAtDischarge(BaseModel):
     ama: bool = False
 
 class Medication(BaseModel):
+    type: str = ""
     generic_name: str = ""
     brand_name: str = ""
     dose: str = ""
@@ -92,7 +93,6 @@ class Medication(BaseModel):
     remarks: str = ""
 
 class FollowUp(BaseModel):
-    instructions: List[str] = []
     follow_up_date: str = ""
     reports: List[str] = []
     tests: List[str] = []
@@ -134,14 +134,8 @@ async def upload_case_file(file: UploadFile = File(...)):
         f.write(await file.read())
         
     try:
-        # Template is expected to be in the parent directory as per user description
-        template_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "Discharge_summary.pdf")
-        
-        if not os.path.exists(template_path):
-            raise HTTPException(status_code=500, detail="Template PDF not found.")
-            
         # Process the file using the AI service
-        extracted_data = process_case_file(temp_file_path, template_path)
+        extracted_data = process_case_file(temp_file_path)
         
         return {"status": "success", "data": extracted_data}
     except Exception as e:

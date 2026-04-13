@@ -4,7 +4,7 @@ import time
 import google.generativeai as genai
 
 
-def process_case_file(case_pdf_path: str, template_pdf_path: str = None) -> dict:
+def process_case_file(case_pdf_path: str) -> dict:
     """
     Production-safe extraction:
     - NO template leakage
@@ -65,21 +65,42 @@ def process_case_file(case_pdf_path: str, template_pdf_path: str = None) -> dict
     else return ""
 
     -------------------------------------
-    RULE 5: MEDICATIONS
+    RULE 5: MEDICATIONS — CRITICAL EXTRACTION RULE
     -------------------------------------
-    Extract ONLY if present
-    else return structured empty object:
+    This case file has TWO distinct medication zones:
 
-    [
-      {
-        "generic_name": "",
-        "brand_name": "",
-        "dose": "",
-        "frequency": "",
-        "duration": "",
-        "remarks": ""
-      }
-    ]
+    ZONE A — "DISCHARGE MEDICATION / PRESENT MEDICATION" table
+    - This is the ONLY valid source for discharge medications
+    - It is a structured table with columns: Type/Form (Tab/Cap/Inj), Trade Name, Generic Name, Quantity, Strength, Mode, Frequency, Time, To Continue
+    - It appears near the bottom of the document AFTER the "CONDITION AT DISCHARGE" section
+    - Extract ONLY from this table
+
+    ZONE B — "COURSE IN HOSPITAL" narratives
+    - These contain drug names mentioned as part of inpatient treatment (e.g., "treated with Aspirin, Clopidogrel, Beta blockers, ACEI/ARB, LMWH...")
+    - These are narrative treatment records, NOT discharge prescriptions
+    - COMPLETELY IGNORE all drug names found in COURSE IN HOSPITAL section
+    - COMPLETELY IGNORE all drug names found in procedure notes
+
+    EXTRACTION RULES:
+    1. For each row in the DISCHARGE MEDICATION table, extract:
+       - type: from "Type/Form" column (e.g., "Tab", "Cap", "Inj", "Syrup")
+       - brand_name: from "Trade Name" column (e.g., "Ecosprin", "Plavix", "Atorlip")
+       - generic_name: from "Generic Name" column (e.g., "Aspirin", "Clopidogrel", "Atorvastatin")
+       - dose: combine Quantity + Strength if both present (e.g., "10 x 75mg" → just use Strength: "75mg")
+       - frequency: from "Frequency" column (e.g., "OD", "BD", "TDS")
+       - duration: from "To Continue" or Time column if written, else ""
+       - remarks: any special instruction written (e.g., "Night", "SL", "before food")
+
+    2. If the DISCHARGE MEDICATION table is empty or not found, return ONE empty row:
+       [{"type": "", "generic_name": "", "brand_name": "", "dose": "", "frequency": "", "duration": "", "remarks": ""}]
+
+    3. DO NOT include any drug mentioned ONLY in:
+       - Course in Hospital section
+       - Procedure notes
+       - Investigaton findings
+       - Any narrative text
+
+    4. DO NOT hallucinate durations. If "To Continue" column is blank, set duration to "".
 
     -------------------------------------
     RULE 6: COURSE / PROCEDURAL NOTE
@@ -158,6 +179,7 @@ def process_case_file(case_pdf_path: str, template_pdf_path: str = None) -> dict
       },
       "medications": [
         {
+          "type": "",
           "generic_name": "",
           "brand_name": "",
           "dose": "",
@@ -169,17 +191,6 @@ def process_case_file(case_pdf_path: str, template_pdf_path: str = None) -> dict
       "nutrition": [],
       "rehabilitation": "Gradual ambulation advised. Avoid strenuous activity. Follow cardiac rehabilitation if applicable.",
       "follow_up": {
-        "instructions": [
-          "[PLEASE CONFIRM YOUR APPOINTMENT FOR FOLLOW UP FROM APPOINTMENT DESK- 9007666895]",
-          "For Medical query, contact Dr. ______",
-          "For Other query contact Service care coordinator – 9051888973",
-          "For any Medicational query, contact Medication Nurse – 6292290663",
-          "(Timing: 10am–6pm Except Holiday)",
-          "For diet query, contact Dietician – 9007033037 (Timing 12pm–3pm)",
-          "Please inform your Doctor before: Changing medications, Dental/invasive procedures",
-          "When to contact doctor: Chest pain, breathlessness, syncope, Fever >101°F, Bleeding, Leg swelling, Sugar fluctuation",
-          "Emergency: 033-4088-4000"
-        ],
         "follow_up_date": "",
         "reports": [],
         "tests": [],
@@ -220,6 +231,22 @@ def process_case_file(case_pdf_path: str, template_pdf_path: str = None) -> dict
             "ptca",
             "uneventful",
             "puncture site",
+            "was treated with , aspirin, clopidogrel",
+            "treated with aspirin, clopidogrel",
+            "managed with aspirin, clopidogrel",
+            "acei/arb, diuretics, lmwh",
+            "beta blockers, acei/arb",
+            "nikorandil, trimetazidine, statin, ranolazine",
+            "antidiabetics, iv gtn/nitrate",
+            "other drugs if any",
+            "post uncomplicated mi",
+            "post lvf/chf",
+            "post cag with findings",
+            "post acs",
+            "puncture site is healthy",
+            "femoral sheath was removed",
+            "after act was satisfactory",
+            "overnight stay in ccu",
         ]
         for b in banned:
             if b in t.lower():
@@ -244,9 +271,9 @@ def process_case_file(case_pdf_path: str, template_pdf_path: str = None) -> dict
                     # We can assume objects with 'complaint', 'condition', 'known', 'vitals', 'name', 'generic_name' are valid.
                     # But if it's an unexpected dict inside arrays like 'primary', 'associated_conditions', 'nutrition', etc.
                     # We stringify it.
-                    if "type" in item and "details" in item:
-                        new_list.append(f"{item['type']}: {item['details']}")
-                    elif any(k in item for k in ["complaint", "condition", "name", "generic_name", "vitals", "known", "instructions"]):
+                    if "event_type" in item and "details" in item:
+                        new_list.append(f"{item['event_type']}: {item['details']}")
+                    elif any(k in item for k in ["complaint", "condition", "name", "generic_name", "vitals", "known"]):
                         new_list.append(sanitize_node(item)) # valid schema object
                     else:
                         new_list.append(json.dumps(item))
@@ -262,8 +289,51 @@ def process_case_file(case_pdf_path: str, template_pdf_path: str = None) -> dict
         data["allergies"]["details"] = json.dumps(data["allergies"]["details"])
 
     # Ensure meds structure
+    def validate_medications(meds: list) -> list:
+        \"\"\"
+        Post-extraction validation pass for discharge medications.
+        Removes meds that look like they came from IP narrative instead of discharge table.
+        \"\"\"
+        # These terms appear in IP treatment narratives but rarely in discharge tables as standalone entries
+        ip_only_terms = [
+            "lmwh", "iv gtn", "iv nitrate", "nikorandil", "trimetazidine",
+            "ranolazine", "inj.", "injection", "thrombolysis", "streptokinase",
+            "tenecteplase", "diuretics", "furosemide", "antibiotics"
+        ]
+        
+        validated = []
+        for med in meds:
+            if not isinstance(med, dict):
+                continue
+            med_text = f"{med.get('generic_name', '')} {med.get('brand_name', '')} {med.get('remarks', '')}".lower()
+            
+            # Flag: if it's an IV-only drug with no oral dose, likely IP
+            is_ip_only = any(term in med_text for term in ip_only_terms)
+            
+            # Flag: if no brand name AND no dose, it's likely hallucinated from narrative
+            is_empty_row = not med.get('generic_name') and not med.get('brand_name')
+            
+            if is_empty_row:
+                continue  # drop truly empty rows
+            
+            if is_ip_only:
+                # Don't drop silently — flag it for review instead
+                med['remarks'] = f"[REVIEW - possible IP med] {med.get('remarks', '')}".strip()
+            
+            validated.append(med)
+        
+        # Ensure at least one row
+        if not validated:
+            validated = [{"type": "", "generic_name": "", "brand_name": "", "dose": "", "frequency": "", "duration": "", "remarks": ""}]
+        
+        return validated
+
+    data["medications"] = validate_medications(data.get("medications", []))
+
+    # Ensure meds structure
     if not data.get("medications"):
         data["medications"] = [{
+            "type": "",
             "generic_name": "",
             "brand_name": "",
             "dose": "",
@@ -275,7 +345,6 @@ def process_case_file(case_pdf_path: str, template_pdf_path: str = None) -> dict
     # Ensure follow-up exists
     if "follow_up" not in data:
         data["follow_up"] = {
-            "instructions": [],
             "follow_up_date": "",
             "reports": [],
             "tests": [],
