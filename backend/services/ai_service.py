@@ -112,8 +112,8 @@ def process_case_file(case_pdf_path: str) -> dict:
     -------------------------------------
     RULE 6: COURSE / PROCEDURAL NOTE
     -------------------------------------
-    Only use facts from document
-    NO generic sentences
+    You MUST synthesize a comprehensive paragraph summarizing the patient's procedures and course in hospital using the chronological timeline of the case history.
+    DO NOT leave this section empty or output "to be filled" if clinical timeline data is available.
 
     -------------------------------------
     RULE 7: DOCTOR

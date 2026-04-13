@@ -61,7 +61,13 @@ export default function DataReviewEditor({ initialData, onReset }: DataReviewEdi
 
   const handleDownloadWord = () => {
     if (!documentRef.current) return;
-    const html = documentRef.current.innerHTML;
+    
+    // Clone the DOM node to scrub UI specific elements without affecting the live screen
+    const clone = documentRef.current.cloneNode(true) as HTMLElement;
+    const ignoreElements = clone.querySelectorAll('[data-html2canvas-ignore="true"]');
+    ignoreElements.forEach(el => el.remove());
+    
+    const html = clone.innerHTML;
     
     const header = "<html xmlns:o='urn:schemas-microsoft-com:office:office' " +
                    "xmlns:w='urn:schemas-microsoft-com:office:word' " +
