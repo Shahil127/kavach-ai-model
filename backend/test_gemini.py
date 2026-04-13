@@ -2,11 +2,9 @@ import requests
 
 api_key = "AIzaSyAVXp2DyKdc_TsJMEzpQ5Z5DEa3OUox3eQ"
 models = [
-    "gemini-2.5-flash-lite",
-    "gemini-flash-latest",
     "gemini-3-flash-preview",
-    "gemini-2.5-pro",
-    "gemini-pro-latest"
+    "gemini-3-pro-preview",
+    "gemini-3.1-flash-lite-preview"
 ]
 payload = {"contents": [{"parts": [{"text": "hi hello"}]}]}
 headers = {"Content-Type": "application/json"}

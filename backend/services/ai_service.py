@@ -17,7 +17,7 @@ def process_case_file(case_pdf_path: str) -> dict:
         raise ValueError("GEMINI_API_KEY not found")
 
     genai.configure(api_key=api_key)
-    model = genai.GenerativeModel('gemini-2.5-flash-lite')
+    model = genai.GenerativeModel('gemini-3-flash-preview')
 
     print(f"Uploading case file {case_pdf_path}...")
     case_file_obj = genai.upload_file(case_pdf_path, mime_type="application/pdf")
