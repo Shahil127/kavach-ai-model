@@ -14,7 +14,7 @@ const geistMono = Geist_Mono({
 
 export const metadata: Metadata = {
   title: "Kavach AI | Discharge Summary",
-  description: "AI-powered hospital discharge documentation",
+  description: "AI-powered hospital discharge documentation platform",
 };
 
 export default function RootLayout({

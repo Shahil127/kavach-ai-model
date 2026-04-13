@@ -393,7 +393,7 @@ export default function DataReviewEditor({ initialData, onReset }: DataReviewEdi
                    <tbody>
                      {data.medications?.length > 0 ? data.medications.map((m: any, i: number) => {
                        const isFlagged = m.remarks?.includes("[REVIEW - possible IP med]");
-                       const cleanRemarks = m.remarks?.replace("[REVIEW - possible IP med]", "").trim();
+                       const cleanRemarks = (m.remarks || "").replace("[REVIEW - possible IP med]", "").trim();
                        return (
                          <tr key={i} style={{ backgroundColor: isFlagged ? "#fff3cd" : "transparent" }}>
                            <td style={{ border: '1px solid #000', padding: '2px' }}>{i + 1}</td>

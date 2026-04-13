@@ -19,12 +19,9 @@ def main():
         print("\n--- EXTRACTION SUCCESS ---")
         print(json.dumps(result, indent=2))
         
-        # Save to a file for easy viewing
-        output_file = "extraction_result.json"
-        with open(output_file, "w") as f:
+        with open("extraction_result.json", "w") as f:
             json.dump(result, f, indent=2)
-            
-        print(f"\nResult also saved to {output_file}")
+        print("\nResult saved to extraction_result.json")
     except Exception as e:
         print(f"\n--- EXTRACTION FAILED ---")
         print(f"Error: {e}")
