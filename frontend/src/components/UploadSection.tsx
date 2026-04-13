@@ -34,8 +34,12 @@ export default function UploadSection({ onUploadSuccess, isLoading, setIsLoading
     const formData = new FormData();
     formData.append("file", file);
 
+    const apiUrl = typeof window !== 'undefined' && window.location.hostname !== 'localhost' 
+        ? '/_/backend/upload' 
+        : 'http://localhost:8000/upload';
+
     try {
-      const response = await fetch("http://localhost:8000/upload", {
+      const response = await fetch(apiUrl, {
         method: "POST",
         body: formData,
       });
