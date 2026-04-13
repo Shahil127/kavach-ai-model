@@ -5,3 +5,4 @@ pymupdf
 reportlab
 python-multipart
 pydantic
+python-dotenv
