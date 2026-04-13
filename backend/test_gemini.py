@@ -1,21 +1,23 @@
 import requests
 
 api_key = "AIzaSyAVXp2DyKdc_TsJMEzpQ5Z5DEa3OUox3eQ"
-models = [
-    "gemini-3-flash-preview",
-    "gemini-3-pro-preview",
-    "gemini-3.1-flash-lite-preview"
-]
+model = "gemini-3-flash-preview"
+url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}"
+
 payload = {"contents": [{"parts": [{"text": "hi hello"}]}]}
 headers = {"Content-Type": "application/json"}
 
-for m in models:
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/{m}:generateContent?key={api_key}"
-    try:
-        r = requests.post(url, headers=headers, json=payload)
-        print(f"Model: {m} -> STATUS: {r.status_code}")
-        if r.status_code == 200:
-            print("WORKING MODEL FOUND:", m)
-            break
-    except Exception as e:
-        pass
+try:
+    print(f"Asking the {model} model: 'hi hello'...")
+    r = requests.post(url, headers=headers, json=payload)
+    print("\n--- STATUS CODE ---")
+    print(r.status_code)
+    
+    print("\n--- MODEL RESPONSE TEXT ---")
+    if r.status_code == 200:
+        data = r.json()
+        print(data['candidates'][0]['content']['parts'][0]['text'])
+    else:
+        print("ERROR:", r.text)
+except Exception as e:
+    print("FATAL ERROR:", e)

@@ -34,8 +34,8 @@ export default function UploadSection({ onUploadSuccess, isLoading, setIsLoading
     const formData = new FormData();
     formData.append("file", file);
 
-    const apiUrl = typeof window !== 'undefined' && window.location.hostname !== 'localhost' 
-        ? '/_/backend/upload' 
+    const apiUrl = process.env.NEXT_PUBLIC_API_URL 
+        ? `${process.env.NEXT_PUBLIC_API_URL}/upload`
         : 'http://localhost:8000/upload';
 
     try {

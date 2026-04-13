@@ -13,10 +13,12 @@ from services.pdf_generator import generate_discharge_pdf
 
 app = FastAPI(title="Discharge Summary Generator API")
 
+frontend_url = os.environ.get("FRONTEND_URL", "http://localhost:3000")
+
 # Setup CORS for the Next.js frontend
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"],
+    allow_origins=[frontend_url, "http://localhost:3000"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
