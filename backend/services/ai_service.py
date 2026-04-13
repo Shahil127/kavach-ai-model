@@ -12,12 +12,14 @@ def process_case_file(case_pdf_path: str) -> dict:
     - STRICT extraction only
     """
 
-    api_key = os.environ.get("GEMINI_API_KEY")
-    if not api_key:
-        raise ValueError("GEMINI_API_KEY not found")
+    api_key_primary = os.environ.get("GEMINI_API_KEY_PRIMARY")
+    api_key_secondary = os.environ.get("GEMINI_API_KEY_SECONDARY")
+    if not api_key_primary:
+        raise ValueError("GEMINI_API_KEY_PRIMARY not found")
 
-    genai.configure(api_key=api_key)
-    model = genai.GenerativeModel('gemini-3-flash-preview')
+    genai.configure(api_key=api_key_primary)
+    model_name = 'gemini-3.1-pro-preview'
+    model = genai.GenerativeModel(model_name)
 
     print(f"Uploading case file {case_pdf_path}...")
     case_file_obj = genai.upload_file(case_pdf_path, mime_type="application/pdf")
@@ -36,16 +38,21 @@ def process_case_file(case_pdf_path: str) -> dict:
     You are a STRICT medical data extraction system.
 
     -------------------------------------
+    RULE 0: REASONING SCRATCHPAD (CRITICAL)
+    -------------------------------------
+    You MUST output a "_clinical_reasoning_scratchpad" string at the top of the JSON. Quoting exactly from the document, explicitly justify every diagnosis and medication you extract. You are strictly banned from adding anything not physically written in the case file.
+
+    -------------------------------------
     RULE 1: CASE FILE ONLY
     -------------------------------------
     Extract ONLY from the given document.
     DO NOT use any prior knowledge.
 
     -------------------------------------
-    RULE 2: NO GUESSING
+    RULE 2: NO GUESSING -> "to be filled"
     -------------------------------------
-    If data not present:
-    - use "" for text
+    If data is not present in the document:
+    - use "to be filled" for text
     - use [] for lists
     - use false for boolean
 
@@ -112,33 +119,42 @@ def process_case_file(case_pdf_path: str) -> dict:
     RULE 7: DOCTOR
     -------------------------------------
     Extract ONLY if present
-    else ""
+    else "to be filled"
 
     -------------------------------------
-    RULE 8: OUTPUT
+    RULE 8: OUTPUT & CONFIDENCE
     -------------------------------------
-    RETURN STRICT JSON ONLY
+    RETURN STRICT JSON ONLY. Provide a "_confidence_scores" section rating clarity (1 to 100).
 
     EXPECTED JSON SCHEMA FORMAT:
     {
+      "_clinical_reasoning_scratchpad": "",
+      "_confidence_scores": {
+        "patient_details": 100,
+        "diagnosis": 100,
+        "clinical_exam": 100,
+        "hospital_course": 100,
+        "medications": 100,
+        "follow_up": 100
+      },
       "patient_details": {
-        "patient_name": "",
-        "age_sex": "",
-        "uhid": "",
-        "admission_date": "",
-        "discharge_date": "",
-        "bed_no": "",
-        "consultant": ""
+        "patient_name": "to be filled",
+        "age_sex": "to be filled",
+        "uhid": "to be filled",
+        "admission_date": "to be filled",
+        "discharge_date": "to be filled",
+        "bed_no": "to be filled",
+        "consultant": "to be filled"
       },
       "diagnosis": {
         "primary": [],
         "associated_conditions": []
       },
       "presenting_complaints": [
-        { "complaint": "", "duration": "" }
+        { "complaint": "to be filled", "duration": "to be filled" }
       ],
       "past_history": [
-        { "condition": "", "duration": "", "remarks": "" }
+        { "condition": "to be filled", "duration": "to be filled", "remarks": "to be filled" }
       ],
       "allergies": {
         "known": false,
@@ -201,10 +217,32 @@ def process_case_file(case_pdf_path: str) -> dict:
     }
     """
 
-    print("Calling Gemini...")
-    response = model.generate_content([case_file_obj, prompt])
+    print("Calling Gemini Primary Engine...")
+    try:
+        response = model.generate_content([case_file_obj, prompt])
+    except Exception as e:
+        print(f"Primary API Failed: {e}. Switching to Secondary Fallback API...")
+        if not api_key_secondary:
+            raise ValueError("Primary API failed and no SECONDARY API KEY was provided.")
+        
+        # Configure secondary key and retry
+        genai.configure(api_key=api_key_secondary)
+        fallback_model = genai.GenerativeModel(model_name)
+        # We must re-upload specifically for the new GenAI client environment context
+        print(f"Re-uploading file for secondary client...")
+        fallback_case_file_obj = genai.upload_file(case_pdf_path, mime_type="application/pdf")
+        while True:
+            file_info = genai.get_file(fallback_case_file_obj.name)
+            if file_info.state.name == "ACTIVE":
+                break
+            time.sleep(2)
+        response = fallback_model.generate_content([fallback_case_file_obj, prompt])
+        genai.delete_file(fallback_case_file_obj.name)
 
-    genai.delete_file(case_file_obj.name)
+    try:
+        genai.delete_file(case_file_obj.name)
+    except Exception:
+        pass
 
     text = response.text.strip()
 
@@ -324,7 +362,7 @@ def process_case_file(case_pdf_path: str) -> dict:
         
         # Ensure at least one row
         if not validated:
-            validated = [{"type": "", "generic_name": "", "brand_name": "", "dose": "", "frequency": "", "duration": "", "remarks": ""}]
+            validated = [{"type": "to be filled", "generic_name": "to be filled", "brand_name": "to be filled", "dose": "to be filled", "frequency": "to be filled", "duration": "to be filled", "remarks": "to be filled"}]
         
         return validated
 
@@ -332,15 +370,15 @@ def process_case_file(case_pdf_path: str) -> dict:
 
 
 
-    # Ensure follow-up exists
+    # Ensure follow_up exists
     if "follow_up" not in data:
         data["follow_up"] = {
-            "follow_up_date": "",
+            "follow_up_date": "to be filled",
             "reports": [],
             "tests": [],
-            "specialty": "",
-            "extracted_doctor": "",
-            "recommended_doctor": ""
+            "specialty": "to be filled",
+            "extracted_doctor": "to be filled",
+            "recommended_doctor": "to be filled"
         }
 
     return data

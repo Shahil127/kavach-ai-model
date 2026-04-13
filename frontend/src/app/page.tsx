@@ -51,9 +51,6 @@ export default function Home() {
         </section>
       </div>
 
-      <footer className="w-full py-6 text-center text-slate-500 text-sm border-t border-slate-800/50 relative z-10 mt-auto">
-        <p>Built with Next.js & FastAPI</p>
-      </footer>
     </main>
   );
 }

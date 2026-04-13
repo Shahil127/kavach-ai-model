@@ -20,6 +20,7 @@ export default function DataReviewEditor({ initialData, onReset }: DataReviewEdi
   }, []);
 
   const [data, setData] = useState({
+    _confidence_scores: initialData?._confidence_scores || {},
     patient_details: initialData?.patient_details || {},
     diagnosis: initialData?.diagnosis || { primary: [], associated_conditions: [] },
     presenting_complaints: initialData?.presenting_complaints || [],
@@ -188,7 +189,10 @@ export default function DataReviewEditor({ initialData, onReset }: DataReviewEdi
 
               {/* DIAGNOSIS */}
               <div style={{ marginBottom: "10px" }}>
-                 <h2 style={{ fontWeight: "bold", marginBottom: "4px" }}>DIAGNOSIS:</h2>
+                 <h2 style={{ fontWeight: "bold", marginBottom: "4px" }}>
+                    DIAGNOSIS:
+                    {data._confidence_scores?.diagnosis && <span data-html2canvas-ignore="true" style={{ fontSize: "10pt", color: "#2563eb", marginLeft: "10px", fontWeight: "normal" }}>(AI Confidence: {data._confidence_scores.diagnosis}%)</span>}
+                 </h2>
                  <ul style={{ listStyleType: "square", paddingLeft: "20px", margin: 0 }}>
                    {data.diagnosis.primary?.length > 0 ? 
                      data.diagnosis.primary.map((d: string, i: number) => <li key={`p-${i}`}>{d}</li>) : 
@@ -207,7 +211,9 @@ export default function DataReviewEditor({ initialData, onReset }: DataReviewEdi
 
               {/* PRESENTING COMPLAINTS */}
               <div style={{ marginBottom: "10px" }}>
-                 <h2 style={{ fontWeight: "bold", marginBottom: "4px" }}>PRESENTING COMPLAINTS:</h2>
+                 <h2 style={{ fontWeight: "bold", marginBottom: "4px" }}>
+                    PRESENTING COMPLAINTS:
+                 </h2>
                  <table style={{ width: "100%", borderCollapse: 'collapse', border: '1px solid #000' }}>
                    <thead>
                      <tr>
@@ -228,7 +234,9 @@ export default function DataReviewEditor({ initialData, onReset }: DataReviewEdi
 
               {/* PAST HISTORY */}
               <div style={{ marginBottom: "10px" }}>
-                 <h2 style={{ fontWeight: "bold", marginBottom: "4px" }}>PAST HISTORY:</h2>
+                 <h2 style={{ fontWeight: "bold", marginBottom: "4px" }}>
+                    PAST HISTORY:
+                 </h2>
                  <table style={{ width: "100%", borderCollapse: 'collapse', border: '1px solid #000' }}>
                    <thead>
                      <tr>
@@ -267,7 +275,10 @@ export default function DataReviewEditor({ initialData, onReset }: DataReviewEdi
 
               {/* CLINICAL EXAMINATION */}
               <div style={{ marginBottom: "10px" }}>
-                 <h2 style={{ fontWeight: "bold", marginBottom: "4px" }}>CLINICAL EXAMINATION:</h2>
+                 <h2 style={{ fontWeight: "bold", marginBottom: "4px" }}>
+                    CLINICAL EXAMINATION:
+                    {data._confidence_scores?.clinical_exam && <span data-html2canvas-ignore="true" style={{ fontSize: "10pt", color: "#2563eb", marginLeft: "10px", fontWeight: "normal" }}>(AI Confidence: {data._confidence_scores.clinical_exam}%)</span>}
+                 </h2>
                  <div style={{ border: '1px solid #000', padding: '6px' }}>
                    <div style={{ marginBottom: "6px" }}>
                      <span style={{ fontWeight: "bold", marginRight: "10px" }}>Vitals:</span>
@@ -345,7 +356,10 @@ export default function DataReviewEditor({ initialData, onReset }: DataReviewEdi
               </div>
               
               <div style={{ marginBottom: "10px" }}>
-                 <h2 style={{ fontWeight: "bold", marginBottom: "4px" }}>COURSE IN HOSPITAL:</h2>
+                 <h2 style={{ fontWeight: "bold", marginBottom: "4px" }}>
+                    COURSE IN HOSPITAL:
+                    {data._confidence_scores?.hospital_course && <span data-html2canvas-ignore="true" style={{ fontSize: "10pt", color: "#2563eb", marginLeft: "10px", fontWeight: "normal" }}>(AI Confidence: {data._confidence_scores.hospital_course}%)</span>}
+                 </h2>
                  <p style={{ margin: 0, paddingLeft: "10px", whiteSpace: "pre-wrap" }}>{data.hospital_course || "-"}</p>
               </div>
 
@@ -376,7 +390,10 @@ export default function DataReviewEditor({ initialData, onReset }: DataReviewEdi
 
               {/* MEDICATIONS */}
               <div style={{ marginBottom: "10px" }}>
-                 <h2 style={{ fontWeight: "bold", marginBottom: "4px" }}>MEDICATIONS ON DISCHARGE:</h2>
+                 <h2 style={{ fontWeight: "bold", marginBottom: "4px" }}>
+                    MEDICATIONS ON DISCHARGE:
+                    {data._confidence_scores?.medications && <span data-html2canvas-ignore="true" style={{ fontSize: "10pt", color: "#2563eb", marginLeft: "10px", fontWeight: "normal" }}>(AI Confidence: {data._confidence_scores.medications}%)</span>}
+                 </h2>
                  <table style={{ width: "100%", borderCollapse: 'collapse', border: '1px solid #000', fontSize: '9pt', textAlign: 'center' }}>
                    <thead>
                      <tr>
@@ -423,6 +440,14 @@ export default function DataReviewEditor({ initialData, onReset }: DataReviewEdi
                       )}
                    </tbody>
                  </table>
+                 <div data-html2canvas-ignore="true" style={{ marginTop: "8px", textAlign: "left" }}>
+                    <button 
+                       onClick={() => setData(prev => ({ ...prev, medications: [...(prev.medications || []), { type: "to be filled", generic_name: "to be filled", brand_name: "to be filled", dose: "to be filled", frequency: "to be filled", duration: "to be filled", remarks: "to be filled" }] }))} 
+                       style={{ padding: "4px 8px", backgroundColor: "#dbeafe", color: "#1d4ed8", border: "1px solid #bfdbfe", borderRadius: "4px", fontSize: "9pt", cursor: "pointer", fontWeight: "500" }}
+                    >
+                       + Add Medication row manually
+                    </button>
+                  </div>
               </div>
 
               {/* DIET & REHAB */}

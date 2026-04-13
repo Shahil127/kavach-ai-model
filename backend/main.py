@@ -142,8 +142,11 @@ async def upload_case_file(file: UploadFile = File(...)):
         raise HTTPException(status_code=500, detail=str(e))
     finally:
         # Clean up temporary file
-        if os.path.exists(temp_file_path):
-            os.remove(temp_file_path)
+        try:
+            if os.path.exists(temp_file_path):
+                os.remove(temp_file_path)
+        except Exception as cleanup_error:
+            print(f"Cleanup error (ignored): {cleanup_error}")
 
 @app.post("/generate-pdf")
 async def generate_pdf(data: DischargeData):
