@@ -11,6 +11,7 @@ interface UploadSectionProps {
 export default function UploadSection({ onUploadSuccess, isLoading, setIsLoading }: UploadSectionProps) {
   const [dragActive, setDragActive] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [statusMessage, setStatusMessage] = useState("Analyzing Patient Record...");
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleDrag = (e: React.DragEvent) => {
@@ -30,6 +31,7 @@ export default function UploadSection({ onUploadSuccess, isLoading, setIsLoading
     }
     setError(null);
     setIsLoading(true);
+    setStatusMessage("Analyzing Patient Record...");
 
     const formData = new FormData();
     formData.append("file", file);
@@ -38,25 +40,46 @@ export default function UploadSection({ onUploadSuccess, isLoading, setIsLoading
         ? `${process.env.NEXT_PUBLIC_API_URL}/upload`
         : 'http://localhost:8000/upload';
 
-    try {
-      const response = await fetch(apiUrl, {
-        method: "POST",
-        body: formData,
-      });
+    const maxAttempts = 3;
+    const retryMessages = [
+      "Analyzing Patient Record...",
+      "Still working, please wait...",
+      "Final attempt..."
+    ];
 
-      if (!response.ok) throw new Error("Processing failed");
+    for (let attempt = 0; attempt < maxAttempts; attempt++) {
+      try {
+        setStatusMessage(retryMessages[attempt]);
+        const response = await fetch(apiUrl, {
+          method: "POST",
+          body: formData,
+        });
 
-      const result = await response.json();
-      if (result.status === "success") {
-        onUploadSuccess(result.data);
-      } else {
-        throw new Error(result.detail || "Unknown error");
+        if (!response.ok) {
+          const errBody = await response.json().catch(() => ({}));
+          throw new Error(errBody.detail || "Processing failed");
+        }
+
+        const result = await response.json();
+        if (result.status === "success") {
+          onUploadSuccess(result.data);
+          setIsLoading(false);
+          return;
+        } else {
+          throw new Error(result.detail || "Unknown error");
+        }
+      } catch (err: any) {
+        if (attempt < maxAttempts - 1) {
+          // Silent retry — wait 4s before next attempt
+          await new Promise(res => setTimeout(res, 4000));
+        } else {
+          // All attempts exhausted
+          setError(err.message || "Failed to process the document.");
+        }
       }
-    } catch (err: any) {
-      setError(err.message || "Failed to process the document.");
-    } finally {
-      setIsLoading(false);
     }
+
+    setIsLoading(false);
   };
 
   const handleDrop = (e: React.DragEvent) => {
@@ -90,7 +113,7 @@ export default function UploadSection({ onUploadSuccess, isLoading, setIsLoading
         {isLoading ? (
           <div className="flex flex-col items-center animate-pulse">
             <div className="w-16 h-16 border-4 border-blue-500/30 border-t-blue-500 rounded-full animate-spin mb-6 shadow-[0_0_15px_rgba(59,130,246,0.5)]"></div>
-            <p className="text-xl font-semibold text-slate-200">Analyzing Patient Record...</p>
+            <p className="text-xl font-semibold text-slate-200">{statusMessage}</p>
             <p className="text-slate-400 mt-2 text-sm text-center">Extracting structured medical data from the case file...</p>
           </div>
         ) : (

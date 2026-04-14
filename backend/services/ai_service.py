@@ -1,40 +1,62 @@
 import os
 import json
 import time
+import logging
 import google.generativeai as genai
 
+logger = logging.getLogger(__name__)
 
-def process_case_file(case_pdf_path: str) -> dict:
+# ─────────────────────────────────────────────
+# BANNED TEMPLATE PHRASES (exact boilerplate only)
+# These are generic cardiology discharge templates — NOT real patient sentences
+# ─────────────────────────────────────────────
+BANNED_TEMPLATE_PHRASES = [
+    "was treated with , aspirin, clopidogrel",
+    "treated with aspirin, clopidogrel, beta blockers, acei/arb, lmwh",
+    "managed with aspirin, clopidogrel, beta blockers, acei/arb",
+    "acei/arb, diuretics, lmwh",
+    "post uncomplicated mi",
+    "post lvf/chf",
+    "post cag with findings",
+    "post acs",
+    "puncture site is healthy",
+    "femoral sheath was removed",
+    "after act was satisfactory",
+    "overnight stay in ccu",
+    "nikorandil, trimetazidine, statin, ranolazine",
+    "antidiabetics, iv gtn/nitrate",
+    "other drugs if any",
+    "coronary angiography",
+    "ptca",
+]
+
+def clean_text(t: str) -> str:
     """
-    Production-safe extraction:
-    - NO template leakage
-    - NO hallucination
-    - STRICT extraction only
+    Only strips generic TEMPLATE boilerplate from hospital_course / procedures.
+    Does NOT wipe real clinical narratives that happen to mention common drug names.
+    Matches only complete banned phrases in isolation, not fragments inside real sentences.
     """
+    if not t:
+        return ""
+    if isinstance(t, dict):
+        t = json.dumps(t)
+    elif isinstance(t, list):
+        t = ", ".join([str(i) for i in t])
+    else:
+        t = str(t)
 
-    api_key_primary = os.environ.get("GEMINI_API_KEY_PRIMARY")
-    api_key_secondary = os.environ.get("GEMINI_API_KEY_SECONDARY")
-    if not api_key_primary:
-        raise ValueError("GEMINI_API_KEY_PRIMARY not found")
+    t_lower = t.lower()
+    # Only nuke the whole value if it IS the template phrase (not just contains one word from it)
+    for phrase in BANNED_TEMPLATE_PHRASES:
+        # Match if the phrase is more than 60% of the entire text — it IS the template
+        if phrase in t_lower and len(phrase) > 0.6 * len(t_lower):
+            logger.warning(f"clean_text: Blocked pure template phrase: '{phrase[:60]}...'")
+            return ""
+    return t
 
-    genai.configure(api_key=api_key_primary)
-    model_name = 'gemini-3-flash-preview'
-    model = genai.GenerativeModel(model_name)
 
-    print(f"Uploading case file {case_pdf_path}...")
-    case_file_obj = genai.upload_file(case_pdf_path, mime_type="application/pdf")
-
-    # Wait until ready
-    while True:
-        file_info = genai.get_file(case_file_obj.name)
-        if file_info.state.name == "ACTIVE":
-            break
-        elif file_info.state.name == "FAILED":
-            raise ValueError("File upload failed")
-        time.sleep(2)
-
-    # 🔥 FINAL CLEAN PROMPT
-    prompt = """
+def _build_prompt() -> str:
+    return """
     You are a STRICT medical data extraction system.
 
     -------------------------------------
@@ -104,7 +126,7 @@ def process_case_file(case_pdf_path: str) -> dict:
     3. DO NOT include any drug mentioned ONLY in:
        - Course in Hospital section
        - Procedure notes
-       - Investigaton findings
+       - Investigation findings
        - Any narrative text
 
     4. DO NOT hallucinate durations. If "To Continue" column is blank, set duration to "".
@@ -112,7 +134,7 @@ def process_case_file(case_pdf_path: str) -> dict:
     -------------------------------------
     RULE 6: COURSE / PROCEDURAL NOTE
     -------------------------------------
-    Synthesize a comprehensive paragraph summarizing the patient's procedures and course in hospital logically over time, BUT ONLY IF sufficient clinical timeline information is explicitly available in the extracted data. 
+    Synthesize a comprehensive paragraph summarizing the patient's procedures and course in hospital logically over time, BUT ONLY IF sufficient clinical timeline information is explicitly available in the extracted data.
     If sufficient detailed context does not exist to justify synthesizing a summary, strictly output "to be filled" and DO NOT guess.
 
     -------------------------------------
@@ -223,87 +245,107 @@ def process_case_file(case_pdf_path: str) -> dict:
     }
     """
 
-    print("Calling Gemini Primary Engine...")
-    try:
-        response = model.generate_content([case_file_obj, prompt])
-    except Exception as e:
-        print(f"Primary API Failed: {e}. Switching to Secondary Fallback API...")
-        if not api_key_secondary:
-            raise ValueError("Primary API failed and no SECONDARY API KEY was provided.")
-        
-        # Configure secondary key and retry
-        genai.configure(api_key=api_key_secondary)
-        fallback_model = genai.GenerativeModel(model_name)
-        # We must re-upload specifically for the new GenAI client environment context
-        print(f"Re-uploading file for secondary client...")
-        fallback_case_file_obj = genai.upload_file(case_pdf_path, mime_type="application/pdf")
-        while True:
-            file_info = genai.get_file(fallback_case_file_obj.name)
-            if file_info.state.name == "ACTIVE":
-                break
-            time.sleep(2)
-        response = fallback_model.generate_content([fallback_case_file_obj, prompt])
-        genai.delete_file(fallback_case_file_obj.name)
 
-    try:
-        genai.delete_file(case_file_obj.name)
-    except Exception:
-        pass
+def _upload_and_wait(case_pdf_path: str) -> object:
+    """Upload PDF to Gemini and wait until ACTIVE."""
+    logger.info(f"Uploading file to Gemini: {case_pdf_path}")
+    file_obj = genai.upload_file(case_pdf_path, mime_type="application/pdf")
+    while True:
+        info = genai.get_file(file_obj.name)
+        if info.state.name == "ACTIVE":
+            break
+        elif info.state.name == "FAILED":
+            raise ValueError("Gemini file upload processing FAILED")
+        time.sleep(2)
+    logger.info(f"File ACTIVE in Gemini: {file_obj.name}")
+    return file_obj
 
-    text = response.text.strip()
 
-    # Clean markdown
+def _call_model(model, file_obj, prompt: str) -> str:
+    """Call Gemini model and return raw text response."""
+    response = model.generate_content([file_obj, prompt])
+    return response.text.strip()
+
+
+def _parse_json(raw_text: str) -> dict:
+    """Strip markdown fences and parse JSON."""
+    text = raw_text
     if text.startswith("```"):
         text = text.replace("```json", "").replace("```", "")
+    return json.loads(text.strip())
 
-    data = json.loads(text)
 
-    # 🔥 BACKEND VALIDATION (CRITICAL)
+def _quality_check(data: dict) -> list[str]:
+    """
+    Returns a list of field names that failed quality thresholds.
+    These are the gaps that will trigger Model B.
+    """
+    gaps = []
 
-    def clean_text(t):
-        if not t:
-            return ""
-        if isinstance(t, dict):
-            t = json.dumps(t)
-        elif isinstance(t, list):
-            t = ", ".join([str(i) for i in t])
-        else:
-            t = str(t)
-            
-        banned = [
-            "coronary angiography",
-            "ptca",
-            "uneventful",
-            "puncture site",
-            "was treated with , aspirin, clopidogrel",
-            "treated with aspirin, clopidogrel",
-            "managed with aspirin, clopidogrel",
-            "acei/arb, diuretics, lmwh",
-            "beta blockers, acei/arb",
-            "nikorandil, trimetazidine, statin, ranolazine",
-            "antidiabetics, iv gtn/nitrate",
-            "other drugs if any",
-            "post uncomplicated mi",
-            "post lvf/chf",
-            "post cag with findings",
-            "post acs",
-            "puncture site is healthy",
-            "femoral sheath was removed",
-            "after act was satisfactory",
-            "overnight stay in ccu",
-        ]
-        for b in banned:
-            if b in t.lower():
-                return ""
-        return t
+    # Hospital course: empty or suspiciously short
+    hc = data.get("hospital_course", "")
+    if not hc or hc == "to be filled" or len(str(hc)) < 30:
+        gaps.append("hospital_course")
 
-    # Clean procedures
-    data["procedures"] = clean_text(data.get("procedures"))
+    # Procedures
+    proc = data.get("procedures", "")
+    if not proc or proc == "to be filled":
+        gaps.append("procedures")
 
-    # Clean hospital course
-    data["hospital_course"] = clean_text(data.get("hospital_course"))
-    
-    # Recursively fix dicts inside arrays (where strings are expected)
+    # Medications: only one row and it's all blanks/to be filled
+    meds = data.get("medications", [])
+    if not meds or (len(meds) == 1 and not meds[0].get("generic_name") and not meds[0].get("brand_name")):
+        gaps.append("medications")
+
+    # Primary diagnosis empty
+    if not data.get("diagnosis", {}).get("primary"):
+        gaps.append("diagnosis")
+
+    return gaps
+
+
+def _merge_data(primary: dict, secondary: dict, gaps: list[str]) -> dict:
+    """
+    Merge secondary model results into primary gaps only.
+    Primary values always win where they exist; secondary only fills blanks.
+    """
+    merged = {**primary}
+
+    if "hospital_course" in gaps:
+        sec_hc = secondary.get("hospital_course", "")
+        if sec_hc and sec_hc != "to be filled" and len(str(sec_hc)) > len(str(merged.get("hospital_course", ""))):
+            merged["hospital_course"] = sec_hc
+            logger.info("Merge: hospital_course filled from Model B")
+
+    if "procedures" in gaps:
+        sec_proc = secondary.get("procedures", "")
+        if sec_proc and sec_proc != "to be filled":
+            merged["procedures"] = sec_proc
+            logger.info("Merge: procedures filled from Model B")
+
+    if "medications" in gaps:
+        sec_meds = secondary.get("medications", [])
+        if sec_meds and len(sec_meds) > 0 and (sec_meds[0].get("generic_name") or sec_meds[0].get("brand_name")):
+            merged["medications"] = sec_meds
+            logger.info(f"Merge: medications filled from Model B ({len(sec_meds)} rows)")
+
+    if "diagnosis" in gaps:
+        sec_diag = secondary.get("diagnosis", {})
+        if sec_diag.get("primary"):
+            merged["diagnosis"] = sec_diag
+            logger.info("Merge: diagnosis filled from Model B")
+
+    return merged
+
+
+def _post_process(data: dict) -> dict:
+    """Sanitize, validate, and normalize the extracted data."""
+
+    # Clean procedures and hospital_course
+    data["procedures"] = clean_text(data.get("procedures", ""))
+    data["hospital_course"] = clean_text(data.get("hospital_course", ""))
+
+    # Recursively fix unexpected dict/list types
     def sanitize_node(node):
         if isinstance(node, dict):
             return {k: sanitize_node(v) for k, v in node.items()}
@@ -311,80 +353,126 @@ def process_case_file(case_pdf_path: str) -> dict:
             new_list = []
             for item in node:
                 if isinstance(item, dict):
-                    # If it's a known object type like medication, complaint, investigation, keep it.
-                    # We can assume objects with 'complaint', 'condition', 'known', 'vitals', 'name', 'generic_name' are valid.
-                    # But if it's an unexpected dict inside arrays like 'primary', 'associated_conditions', 'nutrition', etc.
-                    # We stringify it.
                     if "event_type" in item and "details" in item:
                         new_list.append(f"{item['event_type']}: {item['details']}")
                     elif any(k in item for k in ["complaint", "condition", "name", "generic_name", "vitals", "known"]):
-                        new_list.append(sanitize_node(item)) # valid schema object
+                        new_list.append(sanitize_node(item))
                     else:
                         new_list.append(json.dumps(item))
                 else:
                     new_list.append(item)
             return new_list
         return node
-        
+
     data = sanitize_node(data)
-    
-    # Also specifically target known string fields that might be returned as dicts
+
     if isinstance(data.get("allergies", {}).get("details"), dict):
         data["allergies"]["details"] = json.dumps(data["allergies"]["details"])
 
-    # Ensure meds structure
-    def validate_medications(meds: list) -> list:
-        """
-        Post-extraction validation pass for discharge medications.
-        Removes meds that look like they came from IP narrative instead of discharge table.
-        """
-        # These terms appear in IP treatment narratives but rarely in discharge tables as standalone entries
-        ip_only_terms = [
-            "lmwh", "iv gtn", "iv nitrate", "nikorandil", "trimetazidine",
-            "ranolazine", "inj.", "injection", "thrombolysis", "streptokinase",
-            "tenecteplase", "diuretics", "furosemide", "antibiotics"
-        ]
-        
-        validated = []
-        for med in meds:
-            if not isinstance(med, dict):
-                continue
-            med_text = f"{med.get('generic_name', '')} {med.get('brand_name', '')} {med.get('remarks', '')}".lower()
-            
-            # Flag: if it's an IV-only drug with no oral dose, likely IP
-            is_ip_only = any(term in med_text for term in ip_only_terms)
-            
-            # Flag: if no brand name AND no dose, it's likely hallucinated from narrative
-            is_empty_row = not med.get('generic_name') and not med.get('brand_name')
-            
-            if is_empty_row:
-                continue  # drop truly empty rows
-            
-            if is_ip_only:
-                # Don't drop silently — flag it for review instead
-                med['remarks'] = f"[REVIEW - possible IP med] {med.get('remarks', '')}".strip()
-            
-            validated.append(med)
-        
-        # Ensure at least one row
-        if not validated:
-            validated = [{"type": "to be filled", "generic_name": "to be filled", "brand_name": "to be filled", "dose": "to be filled", "frequency": "to be filled", "duration": "to be filled", "remarks": "to be filled"}]
-        
-        return validated
+    # Validate medications
+    ip_only_terms = [
+        "lmwh", "iv gtn", "iv nitrate", "nikorandil", "trimetazidine",
+        "ranolazine", "thrombolysis", "streptokinase", "tenecteplase",
+    ]
+    validated_meds = []
+    for med in data.get("medications", []):
+        if not isinstance(med, dict):
+            continue
+        med_text = f"{med.get('generic_name', '')} {med.get('brand_name', '')} {med.get('remarks', '')}".lower()
+        is_empty = not med.get("generic_name") and not med.get("brand_name")
+        if is_empty:
+            continue
+        if any(t in med_text for t in ip_only_terms):
+            med["remarks"] = f"[REVIEW - possible IP med] {med.get('remarks', '')}".strip()
+        validated_meds.append(med)
 
-    data["medications"] = validate_medications(data.get("medications", []))
-
-
+    if not validated_meds:
+        validated_meds = [{"type": "to be filled", "generic_name": "to be filled", "brand_name": "to be filled",
+                           "dose": "to be filled", "frequency": "to be filled", "duration": "to be filled", "remarks": "to be filled"}]
+    data["medications"] = validated_meds
 
     # Ensure follow_up exists
     if "follow_up" not in data:
         data["follow_up"] = {
             "follow_up_date": "to be filled",
-            "reports": [],
-            "tests": [],
+            "reports": [], "tests": [],
             "specialty": "to be filled",
             "extracted_doctor": "to be filled",
             "recommended_doctor": "to be filled"
         }
 
     return data
+
+
+def process_case_file(case_pdf_path: str, request_id: str = "N/A") -> dict:
+    """
+    Production-safe extraction with:
+    - Smart clean_text() that preserves real clinical content
+    - Selective dual-model extraction (Model B only triggered on quality gaps)
+    - Structured logging for Render traceability
+    """
+    api_key_primary = os.environ.get("GEMINI_API_KEY_PRIMARY")
+    api_key_secondary = os.environ.get("GEMINI_API_KEY_SECONDARY")
+
+    if not api_key_primary:
+        raise ValueError("GEMINI_API_KEY_PRIMARY not found in environment")
+
+    model_name = "gemini-3-flash-preview"
+    prompt = _build_prompt()
+
+    # ─── MODEL A (Primary key) ───
+    logger.info(f"[{request_id}] Configuring primary Gemini client | model: {model_name}")
+    genai.configure(api_key=api_key_primary)
+    model_a = genai.GenerativeModel(model_name)
+
+    file_obj_a = None
+    try:
+        file_obj_a = _upload_and_wait(case_pdf_path)
+        logger.info(f"[{request_id}] Calling Model A...")
+        raw_a = _call_model(model_a, file_obj_a, prompt)
+        data_a = _parse_json(raw_a)
+        logger.info(f"[{request_id}] Model A extraction complete")
+    except Exception as e:
+        logger.error(f"[{request_id}] Model A failed: {e}")
+        raise
+    finally:
+        if file_obj_a:
+            try:
+                genai.delete_file(file_obj_a.name)
+            except Exception:
+                pass
+
+    # ─── QUALITY CHECK ───
+    gaps = _quality_check(data_a)
+
+    if not gaps:
+        logger.info(f"[{request_id}] Quality check passed — skipping Model B")
+        return _post_process(data_a)
+
+    logger.warning(f"[{request_id}] Quality gaps detected: {gaps} — triggering Model B")
+
+    if not api_key_secondary:
+        logger.warning(f"[{request_id}] No secondary key available — returning Model A result with gaps")
+        return _post_process(data_a)
+
+    # ─── MODEL B (Secondary key) ───
+    file_obj_b = None
+    try:
+        genai.configure(api_key=api_key_secondary)
+        model_b = genai.GenerativeModel(model_name)
+        file_obj_b = _upload_and_wait(case_pdf_path)
+        logger.info(f"[{request_id}] Calling Model B...")
+        raw_b = _call_model(model_b, file_obj_b, prompt)
+        data_b = _parse_json(raw_b)
+        logger.info(f"[{request_id}] Model B extraction complete — merging gaps")
+        merged = _merge_data(data_a, data_b, gaps)
+        return _post_process(merged)
+    except Exception as e:
+        logger.error(f"[{request_id}] Model B failed: {e} — falling back to Model A result")
+        return _post_process(data_a)
+    finally:
+        if file_obj_b:
+            try:
+                genai.delete_file(file_obj_b.name)
+            except Exception:
+                pass

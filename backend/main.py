@@ -1,4 +1,8 @@
 import os
+import time
+import uuid
+import logging
+import logging.config
 from fastapi import FastAPI, UploadFile, File, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
@@ -8,12 +12,22 @@ from dotenv import load_dotenv
 # Load environment variables
 load_dotenv()
 
+# ─────────────────────────────────────────────
+# Structured logging — outputs to Render log stream
+# ─────────────────────────────────────────────
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s | %(levelname)-8s | %(name)s | %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
+)
+logger = logging.getLogger("kavach.main")
+
 from services.ai_service import process_case_file
 from services.pdf_generator import generate_discharge_pdf
 
 app = FastAPI(title="Discharge Summary Generator API")
 
-# Setup CORS for the Next.js frontend
+# CORS configuration
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -22,6 +36,11 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+MAX_FILE_SIZE_BYTES = 40 * 1024 * 1024  # 40 MB
+
+# ─────────────────────────────────────────────
+# Pydantic Schema Models
+# ─────────────────────────────────────────────
 class PatientDetails(BaseModel):
     patient_name: str = ""
     age_sex: str = ""
@@ -119,52 +138,77 @@ class StrictDischargeSummary(BaseModel):
 class DischargeData(BaseModel):
     data: StrictDischargeSummary
 
+
+# ─────────────────────────────────────────────
+# Upload endpoint
+# ─────────────────────────────────────────────
 @app.post("/upload")
 async def upload_case_file(file: UploadFile = File(...)):
-    """
-    Receives a patient case file PDF, sends it to Gemini along with the template
-    to extract structured JSON data.
-    """
-    if not file.filename.endswith('.pdf'):
-        raise HTTPException(status_code=400, detail="Only PDF files are allowed.")
-    
-    # Save the uploaded file temporarily
-    temp_file_path = f"temp_{file.filename}"
-    with open(temp_file_path, "wb") as f:
-        f.write(await file.read())
-        
-    try:
-        # Process the file using the AI service
-        extracted_data = process_case_file(temp_file_path)
-        
-        return {"status": "success", "data": extracted_data}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-    finally:
-        # Clean up temporary file
-        try:
-            if os.path.exists(temp_file_path):
-                os.remove(temp_file_path)
-        except Exception as cleanup_error:
-            print(f"Cleanup error (ignored): {cleanup_error}")
+    request_id = f"REQ-{uuid.uuid4().hex[:6].upper()}"
+    start_time = time.time()
 
+    logger.info(f"[{request_id}] Upload started | filename: {file.filename}")
+
+    if not file.filename.endswith(".pdf"):
+        logger.warning(f"[{request_id}] Rejected: not a PDF")
+        raise HTTPException(status_code=400, detail="Only PDF files are allowed.")
+
+    file_bytes = await file.read()
+    file_size_mb = len(file_bytes) / (1024 * 1024)
+
+    if len(file_bytes) > MAX_FILE_SIZE_BYTES:
+        logger.warning(f"[{request_id}] Rejected: file too large ({file_size_mb:.1f} MB)")
+        raise HTTPException(status_code=400, detail=f"File too large ({file_size_mb:.1f} MB). Maximum allowed size is 40 MB.")
+
+    logger.info(f"[{request_id}] File accepted | size: {file_size_mb:.1f} MB")
+
+    temp_file_path = f"temp_{request_id}_{file.filename}"
+    with open(temp_file_path, "wb") as f:
+        f.write(file_bytes)
+
+    # ─── Backend retry (2 attempts) ───
+    last_error = None
+    for attempt in range(1, 3):
+        try:
+            logger.info(f"[{request_id}] Extraction attempt {attempt}/2")
+            extracted_data = process_case_file(temp_file_path, request_id=request_id)
+            elapsed = time.time() - start_time
+            logger.info(f"[{request_id}] Extraction SUCCESS | attempt: {attempt} | elapsed: {elapsed:.1f}s")
+            return {"status": "success", "data": extracted_data}
+        except Exception as e:
+            last_error = e
+            logger.error(f"[{request_id}] Extraction attempt {attempt} FAILED: {e}")
+            if attempt < 2:
+                logger.info(f"[{request_id}] Waiting 4s before retry...")
+                time.sleep(4)
+
+    # ─── Graceful degraded fallback ───
+    elapsed = time.time() - start_time
+    logger.error(f"[{request_id}] All attempts failed after {elapsed:.1f}s. Returning degraded fallback.")
+
+    # Clean up temp file before returning
+    try:
+        if os.path.exists(temp_file_path):
+            os.remove(temp_file_path)
+    except Exception:
+        pass
+
+    raise HTTPException(status_code=500, detail="Processing failed. Please try again.")
+
+
+# ─────────────────────────────────────────────
+# PDF generation endpoint
+# ─────────────────────────────────────────────
 @app.post("/generate-pdf")
 async def generate_pdf(data: DischargeData):
-    """
-    Takes the structured JSON data (after user review) and generates
-    the final formatted discharge summary PDF.
-    """
     try:
-        # Pydantic models validate and serialize beautifully, 
-        # but the PDF generator might just expect a dict.
-        # So we pass data.data.dict()
         pdf_path = generate_discharge_pdf(data.data.dict())
-        # We can either return the file directly or return a URL to it
-        # Returning direct download via FileResponse would be better
         from fastapi.responses import FileResponse
         return FileResponse(pdf_path, media_type="application/pdf", filename="final_discharge_summary.pdf")
     except Exception as e:
+        logger.error(f"PDF generation failed: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
 
 if __name__ == "__main__":
     import uvicorn
