@@ -96,31 +96,41 @@ def _build_prompt() -> str:
     -------------------------------------
     RULE 5: MEDICATIONS — CRITICAL EXTRACTION RULE
     -------------------------------------
-    This case file has TWO distinct medication zones:
+    A DISCHARGE medication is ONLY something the patient takes HOME by themselves.
+    It must meet ALL of the following criteria:
+    - A self-administrable form: Tab, Cap, Syrup, Drops, or a self-injectable Pen
+    - Has a patient-self-administered frequency: OD, BD, TDS, HS, at night, before food, etc.
+    - NOT something applied by a nurse or doctor at a wound site
+    - NOT something applied or administered in a clinical setting
 
-    ZONE A — "DISCHARGE MEDICATION / PRESENT MEDICATION" table
-    - This is the ONLY valid source for discharge medications
-    - It is a structured table with columns: Type/Form (Tab/Cap/Inj), Trade Name, Generic Name, Quantity, Strength, Mode, Frequency, Time, To Continue
-    - It appears near the bottom of the document AFTER the "CONDITION AT DISCHARGE" section
-    - Extract ONLY from this table
+    STRICTLY EXCLUDE these from discharge medications (drop them entirely):
+    - Any row where the name contains: dressing, soaking, wash, betadine, saline, gauze, bandage, pack, suture
+    - Any ointment/cream/gel/lotion that is applied TO a wound, radial/femoral site, or surgical site
+      (e.g., Fusicdc L/A ointment on puncture site = EXCLUDED)
+    - Any row labelled as "Daily dressing", "Wound care", "Soaking", or similar
+    - Any drug that requires a doctor or nurse to administer in clinic (IV, IM injection regimens requiring hospital visit)
 
-    ZONE B — "COURSE IN HOSPITAL" narratives
-    - These contain drug names mentioned as part of inpatient treatment (e.g., "treated with Aspirin, Clopidogrel, Beta blockers, ACEI/ARB, LMWH...")
-    - These are narrative treatment records, NOT discharge prescriptions
-    - COMPLETELY IGNORE all drug names found in COURSE IN HOSPITAL section
-    - COMPLETELY IGNORE all drug names found in procedure notes
+    Self-applied topicals (patient applies at home on non-wound skin) ARE allowed if explicitly stated.
+
+    GENERIC NAME RESOLUTION:
+    If the generic name column is blank but the brand name is given, resolve it from pharmacological knowledge.
+    Common examples: Ecosprin→Aspirin, Clopilet/Plavix→Clopidogrel, Aztor/Atorlip→Atorvastatin,
+    Telma→Telmisartan, Glimestar→Glimepiride, Cilacar→Cilnidipine, Eptoin→Phenytoin,
+    Valprol CR→Valproate, Pan/Pantocid→Pantoprazole, Fusicdc→Fusidic acid,
+    Ecosprin AV→Aspirin+Atorvastatin combination.
+    This is pure pharmacological fact — resolving a brand to a generic is allowed.
 
     EXTRACTION RULES:
-    1. For each row in the DISCHARGE MEDICATION table, extract:
-       - type: from "Type/Form" column (e.g., "Tab", "Cap", "Inj", "Syrup")
-       - brand_name: from "Trade Name" column (e.g., "Ecosprin", "Plavix", "Atorlip")
-       - generic_name: from "Generic Name" column (e.g., "Aspirin", "Clopidogrel", "Atorvastatin")
-       - dose: combine Quantity + Strength if both present (e.g., "10 x 75mg" → just use Strength: "75mg")
-       - frequency: from "Frequency" column (e.g., "OD", "BD", "TDS")
-       - duration: from "To Continue" or Time column if written, else ""
-       - remarks: any special instruction written (e.g., "Night", "SL", "before food")
+    1. For each VALID discharge medication row, extract:
+       - type: from Type/Form column (e.g., "Tab", "Cap", "Syrup")
+       - brand_name: from Trade Name column
+       - generic_name: from Generic Name column, OR resolved from brand name if blank
+       - dose: Strength column value (e.g., "75mg")
+       - frequency: from Frequency column (e.g., "OD", "BD", "TDS")
+       - duration: from "To Continue" column if written, else ""
+       - remarks: any special instruction written
 
-    2. If the DISCHARGE MEDICATION table is empty or not found, return ONE empty row:
+    2. If no valid discharge medications found, return ONE empty row:
        [{"type": "", "generic_name": "", "brand_name": "", "dose": "", "frequency": "", "duration": "", "remarks": ""}]
 
     3. DO NOT include any drug mentioned ONLY in:
@@ -369,21 +379,46 @@ def _post_process(data: dict) -> dict:
     if isinstance(data.get("allergies", {}).get("details"), dict):
         data["allergies"]["details"] = json.dumps(data["allergies"]["details"])
 
-    # Validate medications
-    ip_only_terms = [
-        "lmwh", "iv gtn", "iv nitrate", "nikorandil", "trimetazidine",
-        "ranolazine", "thrombolysis", "streptokinase", "tenecteplase",
+    # ─────────────────────────────────────────────
+    # Wound care / non-discharge item filters
+    # ─────────────────────────────────────────────
+    WOUND_CARE_KEYWORDS = [
+        "dressing", "daily dressing", "betadine", "normal saline", "saline wash",
+        "gauze", "bandage", "packing", "wound care", "wound wash", "soaking",
+        "suture", "stitch", "radial site", "femoral site", "puncture site",
     ]
+
+    WOUND_TOPICAL_TYPES = ["dressing"]
+    WOUND_TOPICAL_BRANDS = ["fusicdc", "fusidic", "betadine ointment", "silver sulfadiazine", "soframycin"]
+
     validated_meds = []
     for med in data.get("medications", []):
         if not isinstance(med, dict):
             continue
-        med_text = f"{med.get('generic_name', '')} {med.get('brand_name', '')} {med.get('remarks', '')}".lower()
+
+        name_text = f"{med.get('generic_name', '')} {med.get('brand_name', '')} {med.get('remarks', '')} {med.get('type', '')}".lower()
+
+        # Tier 1: Drop by wound care keywords
+        if any(kw in name_text for kw in WOUND_CARE_KEYWORDS):
+            logger.info(f"Wound care row excluded: {med.get('brand_name', '')}")
+            continue
+
+        # Tier 2: Drop wound-applied topicals by type + known brand
+        med_type = med.get("type", "").lower()
+        med_brand = med.get("brand_name", "").lower()
+        if any(t in med_type for t in WOUND_TOPICAL_TYPES):
+            logger.info(f"Wound topical (type) excluded: {med.get('brand_name', '')}")
+            continue
+        if any(b in med_brand for b in WOUND_TOPICAL_BRANDS):
+            logger.info(f"Wound topical (brand) excluded: {med.get('brand_name', '')}")
+            continue
+
+        # Tier 3: Drop truly empty rows (no brand and no generic)
         is_empty = not med.get("generic_name") and not med.get("brand_name")
         if is_empty:
             continue
-        if any(t in med_text for t in ip_only_terms):
-            med["remarks"] = f"[REVIEW - possible IP med] {med.get('remarks', '')}".strip()
+
+        # Keep — passes all filters
         validated_meds.append(med)
 
     if not validated_meds:
